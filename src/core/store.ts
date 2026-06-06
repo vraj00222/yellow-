@@ -18,7 +18,15 @@ export class CapsuleStore {
   constructor(private readonly adapter: BackendAdapter) {}
 
   async freeze(label: string, context: CapsuleContext = {}): Promise<CapsuleMeta> {
-    const state = await this.adapter.snapshotState();
+    return this.ingest(label, await this.adapter.snapshotState(), context);
+  }
+
+  /**
+   * Freeze a capsule from a state supplied by the caller (rather than snapshotting
+   * the adapter). Used by the HTTP ingest path, where an external app reports a
+   * crash together with its own backend tables.
+   */
+  async ingest(label: string, state: BackendState, context: CapsuleContext = {}): Promise<CapsuleMeta> {
     const existing = await this.adapter.listMeta();
     const id = generateId(label, new Set(existing.map((m) => m.id)));
     const meta: CapsuleMeta = {

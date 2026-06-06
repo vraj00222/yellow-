@@ -9,6 +9,7 @@ import { getAdapter } from '../config';
 import { CAPSULE_VERSION } from '../version';
 import { OpenRouterAgent } from '../agents/openrouter';
 import { triage, rowsAffected } from '../triage';
+import { redact, redactBody } from '../sdk/redact';
 import {
   startNotifier,
   listApprovals,
@@ -17,7 +18,7 @@ import {
   sendTest,
   notifyCapsule,
 } from '../notify/service';
-import type { BackendState, CapsuleMeta } from '../core/types';
+import type { BackendState, CapsuleContext, CapsuleMeta } from '../core/types';
 
 const store = new CapsuleStore(getAdapter());
 const agent = new OpenRouterAgent();
@@ -32,11 +33,16 @@ const server = createServer((req, res) => {
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const method = req.method ?? 'GET';
-  if (url.pathname.startsWith('/api/')) return handleApi(method, url, res);
+  if (url.pathname.startsWith('/api/')) return handleApi(req, method, url, res);
   return serveStatic(url.pathname, res);
 }
 
-async function handleApi(method: string, url: URL, res: ServerResponse): Promise<void> {
+async function handleApi(
+  req: IncomingMessage,
+  method: string,
+  url: URL,
+  res: ServerResponse,
+): Promise<void> {
   const path = url.pathname;
 
   if (method === 'GET' && path === '/api/health') {
@@ -44,6 +50,31 @@ async function handleApi(method: string, url: URL, res: ServerResponse): Promise
       adapter: process.env.CAPSULE_ADAPTER ?? 'mock',
       version: CAPSULE_VERSION,
     });
+  }
+
+  // Ingest a crash reported by ANY app over HTTP (error + the app's DB tables).
+  // Lets a separate repo (e.g. the Lumen store) integrate Capsule without
+  // importing its internals. The redaction rule applies here too.
+  if (method === 'POST' && path === '/api/ingest') {
+    const body = (await readBody(req)) as IngestBody;
+    if (!body?.error?.message) return sendJson(res, 400, { error: 'error.message is required' });
+    const state: BackendState = { schemaVersion: body.schemaVersion ?? '1', tables: body.tables ?? {} };
+    const context: CapsuleContext = {
+      error: { name: body.error.name ?? 'Error', message: body.error.message, stack: body.error.stack },
+    };
+    if (body.request) {
+      context.request = {
+        method: body.request.method,
+        url: body.request.url,
+        headers: body.request.headers
+          ? (redact(body.request.headers) as Record<string, unknown>)
+          : undefined,
+        body: redactBody(body.request.body),
+      };
+    }
+    if (body.session) context.session = redact(body.session) as Record<string, unknown>;
+    const meta = await store.ingest(body.label ?? 'crash', state, context);
+    return sendJson(res, 200, { ok: true, id: meta.id });
   }
 
   if (method === 'GET' && path === '/api/capsules') {
@@ -123,6 +154,26 @@ async function handleApi(method: string, url: URL, res: ServerResponse): Promise
   }
 
   return sendJson(res, 404, { error: `No route for ${method} ${path}` });
+}
+
+interface IngestBody {
+  label?: string;
+  schemaVersion?: string;
+  error?: { name?: string; message?: string; stack?: string };
+  request?: { method?: string; url?: string; headers?: Record<string, unknown>; body?: unknown };
+  session?: Record<string, unknown>;
+  tables?: Record<string, Record<string, unknown>[]>;
+}
+
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const c of req) chunks.push(c as Buffer);
+  if (chunks.length === 0) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    return {};
+  }
 }
 
 function summarize(state: BackendState): { schemaVersion: string; tables: Record<string, number> } {
