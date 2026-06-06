@@ -28,12 +28,39 @@ export interface CapsuleContext {
   gitCommit?: string;
 }
 
+export type Severity = 'low' | 'medium' | 'high' | 'critical';
+
+export interface Triage {
+  category: string;
+  severity: Severity;
+}
+
 export interface CapsuleMeta {
   id: string;
   label: string;
   createdAt: string;
   schemaVersion: string;
   context: CapsuleContext;
+  /** Category + severity, computed server-side. Absent on healthy snapshots. */
+  triage?: Triage | null;
+}
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'investigating';
+
+export interface Approval {
+  status: ApprovalStatus;
+  at: string;
+  category?: string;
+  severity?: Severity;
+  restoreTo?: string;
+  note?: string;
+}
+
+export interface NotifySettings {
+  enabled: boolean;
+  connected: boolean;
+  chatName?: string;
+  dashboardUrl: string;
 }
 
 export interface RowChange {
@@ -67,6 +94,8 @@ export interface CapsuleDetail {
   baseline: { id: string; label: string } | null;
   /** baseline → this diff: the rows that moved. Null when there is no baseline. */
   affected: StateDiff | null;
+  /** Telegram approval state for this capsule, if any. */
+  approval?: Approval | null;
 }
 
 export interface RestoreResult {

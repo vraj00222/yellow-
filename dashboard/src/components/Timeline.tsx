@@ -1,21 +1,23 @@
-import type { CapsuleMeta } from '../types';
+import type { Approval, CapsuleMeta } from '../types';
 import { relativeTime } from '../format';
-import { categorize } from '../categorize';
+import { ApprovalChip, SeverityBadge } from './Badges';
 
 interface Props {
   capsules: CapsuleMeta[];
   selectedId: string | null;
+  approvals?: Record<string, Approval>;
   onSelect: (id: string) => void;
 }
 
-export function Timeline({ capsules, selectedId, onSelect }: Props) {
+export function Timeline({ capsules, selectedId, approvals, onSelect }: Props) {
   return (
     <nav className="rail" aria-label="Capsule timeline">
       {capsules.map((c, i) => {
         const active = c.id === selectedId;
         const isError = Boolean(c.context.error);
         const isLatest = i === 0;
-        const category = categorize(c);
+        const category = c.triage?.category;
+        const approval = approvals?.[c.id];
         return (
           <button
             key={c.id}
@@ -38,7 +40,13 @@ export function Timeline({ capsules, selectedId, onSelect }: Props) {
                 <span className="tl-card__time">{relativeTime(c.createdAt)}</span>
               </span>
               <span className="tl-card__id mono">{c.id}</span>
-              {category && <span className="tl-card__cat">{category}</span>}
+              {(category || c.triage?.severity) && (
+                <span className="tl-card__meta">
+                  <SeverityBadge severity={c.triage?.severity} />
+                  {category && <span className="tl-card__cat">{category}</span>}
+                  <ApprovalChip status={approval?.status} />
+                </span>
+              )}
               {isError && c.context.error && (
                 <span className="tl-card__err">{c.context.error.message}</span>
               )}

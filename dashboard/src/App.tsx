@@ -4,8 +4,9 @@ import { api } from './api';
 import { EASE, prefersReduced } from './anim';
 import { errMsg } from './format';
 import { baselineFor, latestDiffPair, latestInspectId } from './select';
-import type { CapsuleMeta } from './types';
+import type { Approval, CapsuleMeta } from './types';
 import { Ambient } from './components/Ambient';
+import { Settings } from './components/Settings';
 import { Timeline } from './components/Timeline';
 import { TimelineSkeleton } from './components/Skeleton';
 import { Mascot } from './components/Mascot';
@@ -27,6 +28,8 @@ const urlTo = search.get('to');
 
 export function App() {
   const [capsules, setCapsules] = useState<CapsuleMeta[] | null>(null);
+  const [approvals, setApprovals] = useState<Record<string, Approval>>({});
+  const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(urlCapsule);
   const [mode, setMode] = useState<Mode>(urlFrom && urlTo ? 'diff' : urlCapsule ? 'detail' : 'diff');
@@ -60,8 +63,9 @@ export function App() {
   // Load capsules, defaulting the inspected capsule + diff pair to the LATEST run.
   const load = useCallback(async () => {
     try {
-      const list = await api.capsules();
+      const [list, apr] = await Promise.all([api.capsules(), api.approvals().catch(() => ({}))]);
       setCapsules(list);
+      setApprovals(apr);
       setError(null);
       if (!list.length) return;
       if (!selPinned.current) setSelectedId(latestInspectId(list));
@@ -83,9 +87,12 @@ export function App() {
     const onVis = () => {
       if (!document.hidden) void load();
     };
+    // Live poll so new crashes + approval status updates appear without a refresh.
+    const poll = setInterval(() => void load(), 3000);
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVis);
     return () => {
+      clearInterval(poll);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVis);
     };
@@ -143,6 +150,7 @@ export function App() {
   return (
     <div className="shell" ref={shell}>
       <Ambient />
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
       <header className="topbar">
         <div className="topbar__brand">
@@ -155,6 +163,15 @@ export function App() {
             <span className="crumbs__seg crumbs__seg--cur">{mode === 'diff' ? 'Diff' : 'Inspect'}</span>
           </nav>
           <ConnBadge />
+          <button
+            type="button"
+            className="iconbtn"
+            onClick={() => setShowSettings(true)}
+            title="Crash-alert settings"
+            aria-label="Settings"
+          >
+            ⚙
+          </button>
           <div className="segmented" data-mode={mode} role="tablist" aria-label="View">
             <span className="seg__pill" aria-hidden="true" />
             <button
@@ -211,6 +228,7 @@ export function App() {
             <Timeline
               capsules={capsules}
               selectedId={selectedId}
+              approvals={approvals}
               onSelect={(id) => {
                 selPinned.current = true;
                 setSelectedId(id);

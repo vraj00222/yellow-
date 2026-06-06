@@ -1,8 +1,10 @@
 import type {
+  Approval,
   CapsuleDetail,
   CapsuleMeta,
   DiagnoseResult,
   Health,
+  NotifySettings,
   RestoreResult,
   StateDiff,
 } from './types';
@@ -47,5 +49,15 @@ export const api = {
       throw new Error(detail);
     }
     return (await res.json()) as DiagnoseResult;
+  },
+  approvals: () => getJson<Record<string, Approval>>('/api/approvals'),
+  settings: () => getJson<NotifySettings>('/api/settings'),
+  testTelegram: async (): Promise<{ ok: boolean; error?: string }> => {
+    const res = await fetch('/api/settings/test', { method: 'POST' });
+    return (await res.json()) as { ok: boolean; error?: string };
+  },
+  notify: async (id: string): Promise<{ ok: boolean; error?: string }> => {
+    const res = await fetch(`/api/capsules/${q(id)}/notify`, { method: 'POST' });
+    return (await res.json()) as { ok: boolean; error?: string };
   },
 };

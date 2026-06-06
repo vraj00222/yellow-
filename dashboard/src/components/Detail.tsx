@@ -7,6 +7,7 @@ import { errMsg, fmt } from '../format';
 import { CountUp } from './CountUp';
 import { PanelSkeleton } from './Skeleton';
 import { ShareButton } from './ShareButton';
+import { ApprovalChip, SeverityBadge } from './Badges';
 import { inspectLink } from '../share';
 import type {
   BackendState,
@@ -33,6 +34,7 @@ export function Detail({
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseErr, setDiagnoseErr] = useState<string | null>(null);
+  const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const scope = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -44,6 +46,7 @@ export function Detail({
     setDiagnosis(null);
     setDiagnosing(false);
     setDiagnoseErr(null);
+    setNotifyMsg(null);
     if (!id) return;
     let live = true;
     api.capsule(id).then((d) => live && setData(d)).catch((e) => live && setErr(errMsg(e)));
@@ -76,9 +79,15 @@ export function Detail({
       </div>
     );
 
-  const { meta, state, baseline, affected } = data;
+  const { meta, state, baseline, affected, approval } = data;
   const { error, request, session } = meta.context;
   const affectedRows = affected ? affectedList(affected) : [];
+
+  const onNotify = async () => {
+    setNotifyMsg('Sending…');
+    const r = await api.notify(meta.id);
+    setNotifyMsg(r.ok ? '✓ Sent to Telegram' : `✗ ${r.error}`);
+  };
 
   const onRestore = async () => {
     setRestoring(true);
@@ -115,6 +124,9 @@ export function Detail({
             <div className="vhead__title mono">{meta.id}</div>
             <div className="vhead__sub">
               <span className={`pill ${error ? 'pill--error' : 'pill--ok'}`}>{meta.label}</span>
+              <SeverityBadge severity={meta.triage?.severity} />
+              {meta.triage?.category && <span className="tl-card__cat">{meta.triage.category}</span>}
+              <ApprovalChip status={approval?.status} />
               <span className="dimx">schema v{meta.schemaVersion}</span>
               <span className="dimx">{new Date(meta.createdAt).toLocaleString()}</span>
             </div>
@@ -146,6 +158,12 @@ export function Detail({
               {diagnosing ? 'Diagnosing…' : 'Ask agent to fix'}
             </button>
           )}
+          {error && (
+            <button className="btn" onClick={onNotify} title="Send this crash to the developer's Telegram">
+              Send to Telegram
+            </button>
+          )}
+          {notifyMsg && <span className="dimx">{notifyMsg}</span>}
         </div>
       </header>
 
