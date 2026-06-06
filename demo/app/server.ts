@@ -9,13 +9,14 @@ import { checkout, type Cart } from '../checkout';
 import type { BackendState } from '../../src/core/types';
 
 /**
- * "Yellow Store" — a deliberately buggy demo app. Each button hits a backend
- * route wrapped in capsule.guard(), so a crash freezes a capsule (with the exact
- * backend state) that the Capsule dashboard + Telegram approval loop pick up.
+ * "Lumen" — a real-feeling storefront that is deliberately buggy. Shoppers and
+ * admins trigger crashes through natural actions (checkout, discontinue a
+ * product, apply a promo, view orders…). Every backend route is wrapped in
+ * capsule.guard(), so a crash freezes a capsule (with the exact backend state)
+ * that the Capsule dashboard + Telegram approval loop pick up.
  *
- * This file lives under demo/, so it may legitimately import a concrete adapter
- * and write live state (simulating a production backend) — the adapter rule's
- * documented exception.
+ * Under demo/, so it may import a concrete adapter and write live state
+ * (simulating production) — the adapter rule's documented exception.
  */
 
 const ROOT = resolve(process.cwd(), '.capsule');
@@ -30,13 +31,16 @@ const healthy: BackendState = {
       { id: 'p1', name: 'Aero Cap', price: 25, stock: 40 },
       { id: 'p2', name: 'Studio Tee', price: 18, stock: 5 },
       { id: 'p3', name: 'Travel Mug', price: 12, stock: 80 },
+      { id: 'p4', name: 'Canvas Tote', price: 20, stock: 25 },
+      { id: 'p5', name: 'Desk Lamp', price: 35, stock: 14 },
+      { id: 'p6', name: 'Noise Buds', price: 60, stock: 9 },
     ],
     carts: [{ id: 'c1', userId: 'u1', items: [{ productId: 'p2', qty: 1 }, { productId: 'p1', qty: 2 }] }],
     users: [{ id: 'u1', email: 'sam@example.com', plan: 'pro' }],
   },
 };
 
-const cart: Cart = {
+const defaultCart: Cart = {
   id: 'c1',
   userId: 'u1',
   items: [
@@ -48,16 +52,18 @@ const cart: Cart = {
 const backend = new MockBackend(ROOT);
 const { store, guard, reportError } = initCapsule(backend);
 
-/** Common guard context — includes secrets on purpose, to prove redaction works. */
-const ctx = {
-  request: {
-    method: 'POST',
-    url: '/checkout',
-    headers: { authorization: 'Bearer sek_live_9f2c1d', cookie: 'sid=abc123' },
-    body: { cartId: cart.id, card: '4111111111111111' },
-  },
-  session: { userId: 'u1', token: 'sek_live_9f2c1d' },
-};
+/** Common guard context — carries secrets on purpose, to prove redaction works. */
+function reqCtx(url: string, body?: unknown) {
+  return {
+    request: {
+      method: 'POST',
+      url,
+      headers: { authorization: 'Bearer sek_live_9f2c1d', cookie: 'sid=abc123' },
+      body: body ?? { card: '4111111111111111' },
+    },
+    session: { userId: 'u1', token: 'sek_live_9f2c1d' },
+  };
+}
 
 async function seed(): Promise<void> {
   if (process.env.RESET !== '0') {
@@ -69,81 +75,72 @@ async function seed(): Promise<void> {
   }
   await backend.writeLiveState(healthy);
   await store.freeze('healthy');
-  console.log('[yellow-store] seeded a healthy production database + froze baseline');
+  console.log('[lumen] seeded a healthy production database + froze baseline');
 }
 
-/* ----------------------------------------------------------- error scenarios */
+/* --------------------------- breadth bugs (real store actions) ------------- */
 
 type Handler = () => Promise<unknown> | unknown;
 
-const SCENARIOS: Record<string, { ctxUrl: string; run: Handler }> = {
-  // The headline: a bad deploy deleted a product the cart still references.
-  checkout: {
-    ctxUrl: 'POST /api/checkout',
-    run: async () => checkout(await backend.snapshotState(), cart),
-  },
-  profile: {
-    ctxUrl: 'GET /api/profile?user=ghost',
+const SCENARIOS: Record<string, { url: string; run: Handler }> = {
+  wishlist: {
+    url: 'GET /api/wishlist?user=guest',
     run: async () => {
       const state = await backend.snapshotState();
-      const user = (state.tables.users ?? []).find((u) => u.id === 'ghost') as { email: string } | undefined;
-      return { email: user!.email.toLowerCase() }; // user is undefined -> Cannot read 'email'
+      const user = (state.tables.users ?? []).find((u) => u.id === 'guest') as { email: string } | undefined;
+      return { saved: user!.email }; // guest is undefined -> Cannot read 'email'
     },
   },
-  admin: {
-    ctxUrl: 'GET /api/admin/users',
+  refund: {
+    url: 'POST /api/admin/refund',
     run: () => {
-      throw new Error('Permission denied: admin access required (403)');
+      throw new Error('Permission denied: admin refund requires owner role (403)');
     },
   },
   signup: {
-    ctxUrl: 'POST /api/signup',
+    url: 'POST /api/account/signup',
     run: () => {
       throw new Error('Invalid signup: field "email" is required');
     },
   },
-  coupon: {
-    ctxUrl: 'POST /api/coupon',
+  promo: {
+    url: 'POST /api/cart/promo',
     run: () => {
-      throw new Error('duplicate key value violates unique constraint "coupons_code_key"');
+      throw new Error('duplicate key value violates unique constraint "promo_redemptions_code_key"');
     },
   },
   sync: {
-    ctxUrl: 'GET /api/inventory/sync',
+    url: 'POST /api/admin/inventory/sync',
     run: () => {
       throw new Error('fetch failed: connect ECONNREFUSED inventory-service:9000 (network timeout)');
     },
   },
   like: {
-    ctxUrl: 'POST /api/products/p1/like',
+    url: 'POST /api/products/p1/like',
     run: () => {
       throw new Error('Rate limit exceeded: too many requests (429)');
     },
   },
   orders: {
-    ctxUrl: 'GET /api/orders',
+    url: 'GET /api/account/orders',
     run: () => {
       throw new Error('JWT expired — session token is no longer valid, please re-authenticate');
     },
   },
-  import: {
-    ctxUrl: 'POST /api/import',
-    run: () => JSON.parse('{ "rows": [ {"id": 1}, ]'), // SyntaxError: Unexpected token
+  importcsv: {
+    url: 'POST /api/admin/import',
+    run: () => JSON.parse('{ "rows": [ {"sku": 1}, ]'), // SyntaxError
   },
   report: {
-    ctxUrl: 'GET /api/report?page=999',
+    url: 'GET /api/admin/report?page=999',
     run: () => {
-      throw new Error('Index 999 out of range: report only has 3 pages');
+      throw new Error('Index 999 out of range: sales report only has 3 pages');
     },
   },
 };
 
 /* ------------------------------------------------------------------- the heal */
 
-/**
- * Poll the Capsule API for approvals. When the developer approves a crash from
- * Telegram, restore live state to the healthy baseline — the app heals itself.
- */
 async function healLoop(): Promise<void> {
   let lastHealed = '';
   for (;;) {
@@ -156,7 +153,7 @@ async function healLoop(): Promise<void> {
             const restored = await store.restore(a.restoreTo);
             await backend.writeLiveState(restored);
             lastHealed = id;
-            console.log(`[yellow-store] ✅ approval ${id} → restored live to ${a.restoreTo}; app healed`);
+            console.log(`[lumen] ✅ approval ${id} → restored live to ${a.restoreTo}; store healed`);
           }
         }
       }
@@ -183,17 +180,32 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return sendJson(res, 200, state.tables);
   }
 
-  if (path === '/api/deploy-bad' && method === 'POST') {
-    const broken = structuredClone(healthy);
-    broken.tables.products = broken.tables.products.filter((p) => p.id !== 'p2');
-    broken.tables.products[0] = { ...broken.tables.products[0], price: 30, stock: 38 };
-    await backend.writeLiveState(broken);
-    return sendJson(res, 200, { ok: true, message: 'Shipped a bad deploy: product p2 deleted, p1 repriced.' });
+  // Shopper checkout — crashes if the cart references a discontinued product.
+  if (path === '/api/checkout' && method === 'POST') {
+    const body = (await readBody(req)) as { items?: Cart['items'] };
+    const cart: Cart = body.items?.length ? { id: 'c1', userId: 'u1', items: body.items } : defaultCart;
+    try {
+      const receipt = await guard(async () => checkout(await backend.snapshotState(), cart), reqCtx('POST /api/checkout', { cartId: cart.id, card: '4111111111111111' }));
+      return sendJson(res, 200, { ok: true, receipt });
+    } catch (err) {
+      return sendJson(res, 500, { ok: false, error: (err as Error).message, capsuleId: (err as { capsuleId?: string }).capsuleId });
+    }
   }
 
-  if (path === '/api/reseed' && method === 'POST') {
+  // Admin: discontinue a product (the realistic "bad change" behind the headline crash).
+  const disc = /^\/api\/admin\/discontinue\/([a-z0-9]+)$/.exec(path);
+  if (disc && method === 'POST') {
+    const id = disc[1];
+    const state = await backend.snapshotState();
+    const before = state.tables.products.length;
+    state.tables.products = state.tables.products.filter((p) => p.id !== id);
+    await backend.writeLiveState(state);
+    return sendJson(res, 200, { ok: true, removed: before - state.tables.products.length, id });
+  }
+
+  if (path === '/api/admin/restock' && method === 'POST') {
     await backend.writeLiveState(healthy);
-    return sendJson(res, 200, { ok: true, message: 'Reseeded healthy state.' });
+    return sendJson(res, 200, { ok: true, message: 'Catalog restored to healthy.' });
   }
 
   // Browser errors shipped by capsule-client.js — same redaction-safe path.
@@ -206,19 +218,15 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return sendJson(res, 200, { ok: true, capsuleId: meta.id });
   }
 
-  const scenarioMatch = /^\/api\/run\/([a-z]+)$/.exec(path);
-  if (scenarioMatch) {
-    const s = SCENARIOS[scenarioMatch[1]];
-    if (!s) return sendJson(res, 404, { error: 'unknown scenario' });
+  const scenario = /^\/api\/run\/([a-z]+)$/.exec(path);
+  if (scenario && method === 'POST') {
+    const s = SCENARIOS[scenario[1]];
+    if (!s) return sendJson(res, 404, { error: 'unknown action' });
     try {
-      const result = await guard(s.run, { ...ctx, request: { ...ctx.request, url: s.ctxUrl } });
+      const result = await guard(s.run, reqCtx(s.url));
       return sendJson(res, 200, { ok: true, result });
     } catch (err) {
-      return sendJson(res, 500, {
-        ok: false,
-        error: (err as Error).message,
-        capsuleId: (err as { capsuleId?: string }).capsuleId,
-      });
+      return sendJson(res, 500, { ok: false, error: (err as Error).message, capsuleId: (err as { capsuleId?: string }).capsuleId });
     }
   }
 
@@ -270,6 +278,6 @@ function sleep(ms: number): Promise<void> {
 await seed();
 void healLoop();
 server.listen(PORT, () => {
-  console.log(`[yellow-store] buggy demo app on http://localhost:${PORT}`);
-  console.log(`[yellow-store] watching ${CAPSULE_API}/api/approvals to self-heal on approval`);
+  console.log(`[lumen] storefront on http://localhost:${PORT}`);
+  console.log(`[lumen] watching ${CAPSULE_API}/api/approvals to self-heal on approval`);
 });
