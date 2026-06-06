@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yellow Store — (a deliberately buggy app)</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/capsule-client.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <div class="brand"><span class="logo">▲</span> Yellow Store</div>
+      <div class="tag">protected by <b>capsule.guard()</b> — every crash freezes backend state</div>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>🛒 Storefront</h2>
+        <div id="products" class="products">loading…</div>
+        <div class="row">
+          <button class="btn danger" data-deploy>💥 Ship bad deploy</button>
+          <button class="btn primary" data-run="checkout">🛒 Checkout</button>
+          <button class="btn" data-reseed>↺ Reseed healthy</button>
+        </div>
+        <p class="hint">Ship the bad deploy, then Checkout → it crashes. Approve the fix in Telegram and Checkout again → healed.</p>
+      </section>
+
+      <section class="panel">
+        <h2>🐞 Poke a bug <span class="sub">(each triggers a different error class)</span></h2>
+        <div class="bugs">
+          <button class="btn" data-run="profile">View ghost profile<small>Null / undefined</small></button>
+          <button class="btn" data-run="admin">Open admin<small>Permission / RLS</small></button>
+          <button class="btn" data-run="signup">Bad signup<small>Validation</small></button>
+          <button class="btn" data-run="coupon">Reuse coupon<small>Constraint</small></button>
+          <button class="btn" data-run="sync">Sync inventory<small>Timeout / network</small></button>
+          <button class="btn" data-run="like">Spam like<small>Rate limit</small></button>
+          <button class="btn" data-run="orders">My orders<small>Auth / token</small></button>
+          <button class="btn" data-run="import">Import CSV<small>Parse / type</small></button>
+          <button class="btn" data-run="report">Report p.999<small>Out of range</small></button>
+          <button class="btn" data-uicrash>Crash the UI<small>Frontend capture</small></button>
+        </div>
+      </section>
+
+      <section class="panel console">
+        <h2>📟 Activity</h2>
+        <div id="log" class="log"></div>
+      </section>
+    </main>
+  </body>
+</html>
