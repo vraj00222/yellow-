@@ -46,7 +46,7 @@ export function ConnBadge() {
   return (
     <span
       className={`conn${isLive ? ' conn--live' : ''}`}
-      title={`Backend adapter: ${health.adapter} · Capsule v${health.version}`}
+      title={`Backend adapter: ${health.adapter} · Yellow v${health.version}`}
     >
       <span className="conn__dot" aria-hidden="true" />
       {label}

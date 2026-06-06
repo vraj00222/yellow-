@@ -11,7 +11,7 @@ interface Props {
 
 export function Timeline({ capsules, selectedId, approvals, onSelect }: Props) {
   return (
-    <nav className="rail" aria-label="Capsule timeline">
+    <nav className="rail" aria-label="Yellow timeline">
       {capsules.map((c, i) => {
         const active = c.id === selectedId;
         const isError = Boolean(c.context.error);

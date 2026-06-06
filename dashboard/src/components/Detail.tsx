@@ -244,7 +244,7 @@ export function Detail({
       <section className="statblock" data-rise>
         <div className="statblock__head">
           <span className="panel__title">
-            Frozen backend state <span className="dimx">· the exact rows Capsule captured</span>
+            Frozen backend state <span className="dimx">· the exact rows Yellow captured</span>
           </span>
           <span className="dimx">schema v{state.schemaVersion}</span>
         </div>
