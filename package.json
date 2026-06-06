@@ -8,6 +8,7 @@
     "capsule": "tsx src/cli/index.ts",
     "mcp": "tsx src/mcp/index.ts",
     "api": "tsx src/api/index.ts",
+    "telegram": "tsx src/telegram/bot.ts",
     "demo": "tsx demo/run-demo.ts",
     "demo:insforge": "tsx demo/insforge-crash.ts",
     "demo:reset": "tsx demo/insforge-reset.ts",

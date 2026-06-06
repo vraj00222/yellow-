@@ -4,7 +4,11 @@
 > changes (new file, moved responsibility, a stub gets wired). Pairs with
 > `CLAUDE.md` (the rules) and `USAGE.md` (the user-facing guide).
 >
-> Last synced: Inspect now surfaces the **frozen backend rows** (data table) + the
+> Last synced: Added the **Telegram glance-and-approve channel** (`src/telegram/`) —
+> a crash pings the dev, who approves/denies/asks from the chat; talks to Vraj's
+> orchestrator engine only through the `OrchestratorEngine` contract (`engine.ts`),
+> with a `MockEngine` driving the full flow solo (`npm run telegram`). Earlier:
+> Inspect now surfaces the **frozen backend rows** (data table) + the
 > **rows affected** vs the healthy baseline; selecting a capsule **re-targets the diff**
 > to it vs its own baseline; every crash is auto-sorted into a **problem category**
 > (`dashboard/src/categorize.ts`); the **"Ask agent to fix"** button is wired to a real
@@ -70,6 +74,18 @@ Everything depends only on the `BackendAdapter` interface.
 | `src/api/index.ts` | `node:http`; `GET /api/health`, `GET /api/capsules`, `GET /api/capsules/:id` (meta + summary + **frozen `state` rows** + `baseline` + `affected` diff via `findBaseline`), `GET /api/diff?a&b`, `POST /api/restore/:id`, **`POST /api/capsules/:id/diagnose`** (AI root-cause); serves `dashboard/dist` (SPA fallback + traversal guard) |
 | `src/version.ts` | `CAPSULE_VERSION` |
 
+### Telegram channel — `src/telegram/` (glance-and-approve)
+The "nervous system": a crash pings the dev, who approves/denies/asks **from the
+chat**. Talks to the orchestrator engine (Vraj's brain) only through the
+`OrchestratorEngine` interface — events in, commands out — so the engine swaps
+without touching the channel. The diff travels verbatim (never paraphrased).
+| File | Responsibility |
+| --- | --- |
+| `engine.ts` | **The contract** — `EngineEvent` (engine→channel: `incident.frozen`, `proposal.ready`, `build.started`, `build.complete`, `merge.complete`, `answer.ready`, `error`) + `Command` (channel→engine: `approvePlan`/`denyPlan`/`approveCode`/`denyCode`/`ask`/`takeover`) + the `OrchestratorEngine` interface. Engine owns incident phase; channel only renders + collects. HTTP/JSON in prod, in-process for the mock |
+| `mock-engine.ts` | `MockEngine implements OrchestratorEngine` — scripts the full lifecycle on timers around the canonical checkout bug; `simulateCrash()` (wired to `/crash`); feedback-aware re-propose/re-build. Swapped for Vraj's engine via the same interface |
+| `notify.ts` | Outbound only: `Notifier` (hand-rolled `fetch` to the Bot API — `sendMessage`/`editMessage`/`answerCallback`, HTML parse mode, escaped) + `cardFor(event)` formatters. No model here — the dumb, deterministic lane |
+| `bot.ts` | Long-poll `getUpdates` (no webhook), callback router (`action:incidentId`), per-chat active-incident + pending-feedback maps; renders events→pings, taps/replies→commands; `npm run telegram`. **Only one poller per bot token** (else Telegram 409 Conflict) |
+
 ### Collaboration — `src/sessions/`
 | File | Responsibility |
 | --- | --- |
@@ -106,7 +122,7 @@ connection badge, pixel mascot, InsForge·Replicas footer.
 | `demo/run-demo.ts` | seed → freeze healthy → delete product → `guard` auto-freezes crash → diff → prints root cause (mock) |
 | `demo/insforge-seed.ts` | `products` helpers over an admin client — `seedHealthy`/`breakState`/`resetHealthy` (fail-safe update-then-insert; demo-only) |
 | `demo/insforge-crash.ts` | `npm run demo:insforge` — the same story LIVE on InsForge: seed → freeze → guarded crash (rich + redacted) → deep-link → reset `products` |
-| `tests/*.test.ts` | diff, store, mock, config, redaction, mcp, checkout, stubs, token, insforge-seed — **30 tests** |
+| `tests/*.test.ts` | diff, store, mock, config, redaction, mcp, checkout, stubs, token, insforge-seed, telegram — **37 tests** |
 | `tsconfig.json` | ES2022, ESNext, Bundler, strict, `verbatimModuleSyntax`, `noEmit` |
 | `package.json` | scripts: `capsule`, `mcp`, `api`, `demo`, `demo:insforge`, `dev:dashboard`, `build`, `typecheck`, `test` |
 
@@ -119,7 +135,7 @@ connection badge, pixel mascot, InsForge·Replicas footer.
 - Commit per working unit, only after typecheck is clean AND tests are green.
 
 ## Current state
-- ✅ Wired & green (**30 tests**): core, mock + memory + **InsForge** adapters, sdk, cli (incl. `connect`/`session`), mcp, api, dashboard, demo, capability-token core, docs.
+- ✅ Wired & green (**37 tests**): core, mock + memory + **InsForge** adapters, sdk, cli (incl. `connect`/`session`), mcp, api, dashboard, demo, capability-token core, docs.
 - ✅ **InsForge verified live** end-to-end (CLI + dashboard) — see "InsForge connection" below.
 - ✅ **Live InsForge crash demo** — `npm run demo:insforge`: full freeze → crash → diff → restore story on the real backend (rich, redacted crash capsule), `products` reset after. See `demo/insforge-crash.ts`.
 - ✅ Live **connection badge** — `GET /api/health` → dashboard `ConnBadge` shows the active adapter (InsForge·live / Mock / Memory), with offline + connecting states.

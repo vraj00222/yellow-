@@ -161,7 +161,13 @@ tables snapshot in one page for now — pagination is on the roadmap.)
   (Missing reference, Null/undefined, Permission/RLS, Validation, Constraint
   violation, Timeout/network, …) from the real error, shown on each timeline card.
 - Flat InsForge theme (plain colors, **no glows**) with a clearly partitioned sidebar.
-- End-to-end demo + 30 passing tests.
+- **Telegram glance-and-approve channel** (`npm run telegram`) — a crash pings you
+  in Telegram; you see the proposed fix, the real diff, and approve / deny-with-
+  feedback / ask questions / "let me drive", all from the chat. Talks to the
+  orchestrator engine through one `OrchestratorEngine` contract (`src/telegram/
+  engine.ts`); ships with a `MockEngine` that drives the whole flow solo, so it
+  runs before the real engine exists. Set `TELEGRAM_BOT_TOKEN` in `.env`.
+- End-to-end demo + 37 passing tests.
 
 ## ⏳ Coming soon (scaffolded, not yet wired)
 - **Live co-watch sessions** — open a session link and a teammate hops in to debug
