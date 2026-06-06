@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile, rm } from 'node:fs/promises';
-import { extname, resolve } from 'node:path';
+import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MockBackend } from '../../src/adapters/mock';
 import { initCapsule } from '../../src/sdk';
@@ -60,7 +60,13 @@ const ctx = {
 };
 
 async function seed(): Promise<void> {
-  if (process.env.RESET !== '0') await rm(ROOT, { recursive: true, force: true });
+  if (process.env.RESET !== '0') {
+    // Wipe capsule data for a clean timeline, but KEEP notify.json so the
+    // developer's Telegram connection (chat id) survives a demo restart.
+    await rm(join(ROOT, 'branches'), { recursive: true, force: true });
+    await rm(join(ROOT, 'meta'), { recursive: true, force: true });
+    await rm(join(ROOT, 'live.json'), { force: true });
+  }
   await backend.writeLiveState(healthy);
   await store.freeze('healthy');
   console.log('[yellow-store] seeded a healthy production database + froze baseline');

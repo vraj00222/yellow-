@@ -77,6 +77,16 @@ async function prime(): Promise<void> {
 async function watchOnce(): Promise<void> {
   const metas = await deps!.store.list(); // newest first
   const state = await loadNotify();
+
+  // Prune entries for capsules that no longer exist (e.g. after a demo reset),
+  // so the dashboard board + /api/approvals stay in sync with reality.
+  const ids = new Set(metas.map((m) => m.id));
+  const before = state.seen.length + Object.keys(state.approvals).length;
+  state.seen = state.seen.filter((id) => ids.has(id));
+  for (const id of Object.keys(state.approvals)) if (!ids.has(id)) delete state.approvals[id];
+  for (const id of Object.keys(state.messageIds)) if (!ids.has(id)) delete state.messageIds[id];
+  if (before !== state.seen.length + Object.keys(state.approvals).length) await saveNotify(state);
+
   // oldest first so a burst of crashes alerts in the order they happened
   for (const meta of [...metas].reverse()) {
     if (!meta.context.error) continue; // healthy snapshot
