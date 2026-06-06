@@ -27,19 +27,6 @@ const PORT = Number(process.env.PORT ?? 4000);
 const DASHBOARD_URL = process.env.DASHBOARD_URL ?? `http://localhost:${PORT}`;
 const DASHBOARD_DIST = resolve(process.cwd(), 'dashboard/dist');
 
-// Hardcoded dashboard login (overridable via env). Gates the browser UI only.
-const AUTH_USER = process.env.DASHBOARD_USER ?? 'admin';
-const AUTH_PASS = process.env.DASHBOARD_PASS ?? 'capsule';
-// Machine-to-machine endpoints stay open so an external app can integrate.
-const OPEN_PATHS = new Set(['/api/health', '/api/ingest', '/api/approvals']);
-
-function authed(req: IncomingMessage): boolean {
-  const header = req.headers.authorization ?? '';
-  if (!header.startsWith('Basic ')) return false;
-  const [user, pass] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':');
-  return user === AUTH_USER && pass === AUTH_PASS;
-}
-
 const server = createServer((req, res) => {
   handle(req, res).catch((err) => sendError(res, err));
 });
@@ -47,12 +34,6 @@ const server = createServer((req, res) => {
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const method = req.method ?? 'GET';
-  // Require the hardcoded login for everything except the open machine endpoints.
-  if (!OPEN_PATHS.has(url.pathname) && !authed(req)) {
-    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Capsule dashboard"' });
-    res.end('Authentication required');
-    return;
-  }
   if (url.pathname.startsWith('/api/')) return handleApi(req, method, url, res);
   return serveStatic(url.pathname, res);
 }
