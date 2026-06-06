@@ -4,15 +4,17 @@
 > changes (new file, moved responsibility, a stub gets wired). Pairs with
 > `CLAUDE.md` (the rules) and `USAGE.md` (the user-facing guide).
 >
-> Last synced: Inspect now surfaces the **frozen backend rows** (data table) + the
-> **rows affected** vs the healthy baseline; selecting a capsule **re-targets the diff**
-> to it vs its own baseline; every crash is auto-sorted into a **problem category**
-> (`dashboard/src/categorize.ts`); the **"Ask agent to fix"** button is wired to a real
-> **AI root-cause** via **InsForge Model Gateway** (`src/agents/openrouter.ts` →
-> `POST /api/capsules/:id/diagnose`); and the theme is now **flat (no glows)** with a
-> partitioned sidebar + full-width main. InsForge LIVE — using **3 services** (Database,
-> Storage, Model Gateway).
-> **Next: deeper InsForge integration (meta→DB table, Realtime, Auth/RLS) — see "Pick up here".**
+> Last synced: shipped the **crash → triage → Telegram-approve → heal** workflow.
+> Triage (category + **severity**) is now server-side (`src/triage.ts`, single source
+> of truth; the dashboard's old `categorize.ts` is deleted). A **watcher + Telegram
+> long-poll loop** (`src/notify/`) auto-alerts the developer's phone on every new crash
+> with the **AI root cause** + one-tap **Approve / Reject / Investigate**; Approve records
+> the healthy baseline to restore to and the **demo app self-heals** by polling
+> `/api/approvals`. New SDK `reportError()` ingests **browser** crashes. A clickable
+> buggy demo app (`demo/app/` "Yellow Store") drives ~10 error classes. The demo runs on
+> the **mock adapter** (offline-reliable heal loop); **InsForge Model Gateway** powers the
+> AI (Pro org $10 credits). See `docs/WORKFLOW.md`.
+> **Next: agent opens a GitHub PR with the code fix; dev approves the PR from the phone.**
 
 ## What Capsule is
 
@@ -59,15 +61,23 @@ Everything depends only on the `BackendAdapter` interface.
 ### SDK — `src/sdk/`
 | File | Responsibility |
 | --- | --- |
-| `index.ts` | `initCapsule(adapter)` → `{ store, guard, errorMiddleware }`. `guard` freezes a `crash` capsule on throw, attaches `err.capsuleId`, re-throws the original error; freeze failures are swallowed |
+| `index.ts` | `initCapsule(adapter)` → `{ store, guard, errorMiddleware, reportError }`. `guard` freezes a `crash` capsule on throw, attaches `err.capsuleId`, re-throws the original error; freeze failures are swallowed. **`reportError(errorInfo, ctx)`** freezes a crash from an out-of-band (browser) error, same redaction |
 | `redact.ts` | `redact()` (deep, circular-safe), `redactBody()` (redact + 32 KB truncate), `MAX_BODY_BYTES` |
+
+### Triage + notify — `src/triage.ts`, `src/notify/`
+| File | Responsibility |
+| --- | --- |
+| `triage.ts` | **Single source of truth** for `{ category, severity }` (CVSS-style bands) from the captured error; `rowsAffected(diff)` blast radius escalates severity. Served by the API; the dashboard renders it |
+| `notify/telegram.ts` | Telegram Bot API over `fetch` — `sendMessage`/`editMessage`/`answerCallback`/`getUpdates` (long-poll, **no webhook**), HTML-escape helper; token from `TELEGRAM_BOT_TOKEN` (server-only) |
+| `notify/store.ts` | Persistent notifier state in `.capsule/notify.json` (atomic) — `chatId`, `offset`, `seen`, `approvals`, `messageIds`; in-memory cache is the single writer (API) |
+| `notify/service.ts` | The loop: **watcher** (new crash → triage → AI diagnose → Telegram alert with Approve/Reject/Investigate) + **poller** (`/start` captures chat; callbacks + free-text follow-ups drive approve/reject/investigate). API helpers: `listApprovals`/`settingsStatus`/`sendTest`/`notifyCapsule` |
 
 ### Surfaces
 | File | Responsibility |
 | --- | --- |
 | `src/cli/index.ts` | `capsule` connect/freeze/restore/diff/list/share/session; `connect` = one-command InsForge onboarding (preflight + bucket + write `.env` + gen session secret); `share`/`session` mint dashboard links; `session <id> --role view\|edit` = a signed capability link; colored git-style diff; unknown id → exit 1 |
 | `src/mcp/index.ts` | stdio MCP server "capsule"; 4 tools (`capsule_freeze/restore/diff/list`); `createServer()` + entry guard; `TOOL_NAMES` |
-| `src/api/index.ts` | `node:http`; `GET /api/health`, `GET /api/capsules`, `GET /api/capsules/:id` (meta + summary + **frozen `state` rows** + `baseline` + `affected` diff via `findBaseline`), `GET /api/diff?a&b`, `POST /api/restore/:id`, **`POST /api/capsules/:id/diagnose`** (AI root-cause); serves `dashboard/dist` (SPA fallback + traversal guard) |
+| `src/api/index.ts` | `node:http`; `GET /api/health`, `GET /api/capsules` (each with `triage`), `GET /api/capsules/:id` (meta+`triage` + summary + **frozen `state` rows** + `baseline` + `affected` diff + `approval`), `GET /api/diff?a&b`, `POST /api/restore/:id`, **`POST /api/capsules/:id/diagnose`** (AI root-cause), **`GET /api/approvals`**, **`GET /api/settings`** + **`POST /api/settings/test`**, **`POST /api/capsules/:id/notify`**; starts the notifier on boot; serves `dashboard/dist` (SPA fallback + traversal guard) |
 | `src/version.ts` | `CAPSULE_VERSION` |
 
 ### Collaboration — `src/sessions/`
@@ -103,6 +113,7 @@ connection badge, pixel mascot, InsForge·Replicas footer.
 | Path | Responsibility |
 | --- | --- |
 | `demo/checkout.ts` | `checkout()` with a data-dependent bug (cart → deleted product) |
+| `demo/app/` | **Yellow Store** — clickable buggy app (`npm run app`, `:4100`). Routes wrapped in `guard()` trigger ~10 error classes; `public/capsule-client.js` ships browser errors to `/ingest` → `reportError()`. Seeds a healthy baseline; **self-heals** by polling `/api/approvals` and restoring live state on approval. Under `demo/` so it may write live state (adapter-rule exception) |
 | `demo/run-demo.ts` | seed → freeze healthy → delete product → `guard` auto-freezes crash → diff → prints root cause (mock) |
 | `demo/insforge-seed.ts` | `products` helpers over an admin client — `seedHealthy`/`breakState`/`resetHealthy` (fail-safe update-then-insert; demo-only) |
 | `demo/insforge-crash.ts` | `npm run demo:insforge` — the same story LIVE on InsForge: seed → freeze → guarded crash (rich + redacted) → deep-link → reset `products` |

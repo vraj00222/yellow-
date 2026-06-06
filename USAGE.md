@@ -17,9 +17,14 @@ start *restoring* them.
 npm install
 npm run demo                       # the whole story in one command (mock backend)
 npm run demo:insforge              # the same story, live on your InsForge backend
-npm run api                        # http://localhost:4000  (API + dashboard)
+npm run api                        # http://localhost:4000  (API + dashboard + Telegram loop)
+npm run app                        # http://localhost:4100  (Yellow Store — a buggy demo app)
 npm run dev:dashboard              # http://localhost:5173  (live UI, proxies /api)
 ```
+
+For the full **crash → triage → Telegram-approve → heal** loop (run `app` + `api`
+together, connect a Telegram bot, poke a bug, approve from your phone), see
+**[docs/WORKFLOW.md](./docs/WORKFLOW.md)**.
 
 `npm run demo` seeds a tiny production DB, freezes a **healthy** capsule, deletes
 a product, runs the same checkout inside `guard()` so the crash auto-freezes, and
@@ -157,9 +162,19 @@ tables snapshot in one page for now — pagination is on the roadmap.)
   diff + frozen rows) to **InsForge Model Gateway** (OpenRouter) and returns a
   plain-English root cause + fix. Server-side only; key provisioned by
   `npx @insforge/cli ai setup`.
-- **Problem categories** — every crash is auto-sorted into one of ~11 categories
-  (Missing reference, Null/undefined, Permission/RLS, Validation, Constraint
-  violation, Timeout/network, …) from the real error, shown on each timeline card.
+- **Problem categories + severity** — every crash is auto-sorted into one of ~11
+  categories (Missing reference, Null/undefined, Permission/RLS, …) **and a severity
+  band** (critical/high/medium/low) by `src/triage.ts` (server-side single source of
+  truth), shown on each timeline card and the inspector.
+- **Crash → Telegram approve → heal loop** — a watcher auto-triages + AI-diagnoses
+  every new crash and pings the developer's **Telegram** with the root cause and
+  one-tap **Approve / Reject / Investigate** (long-poll, no webhook). Approve restores
+  the healthy snapshot and the app **self-heals**; free-text replies re-prompt the
+  agent. Connect your phone in the dashboard **⚙ Settings**. See **docs/WORKFLOW.md**.
+- **Browser crash capture** — `capsule.reportError()` + a tiny browser shim ship
+  `window.onerror` / unhandled rejections into the same redaction-safe capsule path.
+- **Yellow Store demo app** (`npm run app`) — a clickable, deliberately buggy app
+  that drives ~10 error classes through `guard()` to exercise the whole workflow.
 - Flat InsForge theme (plain colors, **no glows**) with a clearly partitioned sidebar.
 - End-to-end demo + 30 passing tests.
 
