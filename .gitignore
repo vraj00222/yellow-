@@ -1,0 +1,36 @@
+# OS / editor junk
+.DS_Store
+
+# internal build spec (not part of the published product)
+prompt.txt
+
+node_modules/
+dist/
+.capsule/
+.env
+.env.local
+.insforge/
+*.log
+dashboard/dist/
+.playwright-mcp/
+capsule-diff-*.png
+ai-*.png
+.agents/
+.impeccable/
+.claude/skills/
+skills-lock.json
+
+# InsForge & AI agent skills
+.insforge
+.agent
+.agents
+.augment
+.claude
+.cline
+.github/copilot*
+.kilocode
+.qoder
+.qwen
+.roo
+.trae
+.windsurf
