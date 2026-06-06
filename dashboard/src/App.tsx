@@ -6,6 +6,7 @@ import { errMsg } from './format';
 import { baselineFor, latestDiffPair, latestInspectId } from './select';
 import type { Approval, CapsuleMeta } from './types';
 import { Ambient } from './components/Ambient';
+import { Logo } from './components/Logo';
 import { Settings } from './components/Settings';
 import { Timeline } from './components/Timeline';
 import { TimelineSkeleton } from './components/Skeleton';
@@ -154,7 +155,8 @@ export function App() {
 
       <header className="topbar">
         <div className="topbar__brand">
-          <span className="brand__name mono">Capsule</span>
+          <Logo />
+          <span className="brand__name mono">Yellow</span>
         </div>
         <div className="topbar__main">
           <nav className="crumbs" aria-label="Breadcrumb">

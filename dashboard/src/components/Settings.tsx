@@ -64,7 +64,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         ) : !s.connected ? (
           <ol className="steps">
             <li>Open your bot in Telegram and tap Start (send {' '}<code>/start</code>).</li>
-            <li>Capsule captures your chat automatically — this panel will flip to “Connected”.</li>
+            <li>Yellow captures your chat automatically — this panel will flip to “Connected”.</li>
           </ol>
         ) : (
           <p className="setdone">
