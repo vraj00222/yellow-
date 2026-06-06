@@ -60,4 +60,8 @@ export const api = {
     const res = await fetch(`/api/capsules/${q(id)}/notify`, { method: 'POST' });
     return (await res.json()) as { ok: boolean; error?: string };
   },
+  fixPr: async (id: string): Promise<{ ok: boolean; url?: string; error?: string }> => {
+    const res = await fetch(`/api/capsules/${q(id)}/fix-pr`, { method: 'POST' });
+    return (await res.json()) as { ok: boolean; url?: string; error?: string };
+  },
 };

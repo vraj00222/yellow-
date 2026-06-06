@@ -35,6 +35,7 @@ export function Detail({
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnoseErr, setDiagnoseErr] = useState<string | null>(null);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  const [fixPr, setFixPr] = useState<{ msg: string; url?: string } | null>(null);
   const scope = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -47,6 +48,7 @@ export function Detail({
     setDiagnosing(false);
     setDiagnoseErr(null);
     setNotifyMsg(null);
+    setFixPr(null);
     if (!id) return;
     let live = true;
     api.capsule(id).then((d) => live && setData(d)).catch((e) => live && setErr(errMsg(e)));
@@ -87,6 +89,12 @@ export function Detail({
     setNotifyMsg('Sending…');
     const r = await api.notify(meta.id);
     setNotifyMsg(r.ok ? '✓ Sent to Telegram' : `✗ ${r.error}`);
+  };
+
+  const onFixPr = async () => {
+    setFixPr({ msg: 'Agent is writing a fix + opening a PR…' });
+    const r = await api.fixPr(meta.id);
+    setFixPr(r.ok ? { msg: '✓ PR opened', url: r.url } : { msg: `✗ ${r.error}` });
   };
 
   const onRestore = async () => {
@@ -163,7 +171,23 @@ export function Detail({
               Send to Telegram
             </button>
           )}
+          {error && (
+            <button className="btn" onClick={onFixPr} title="Have the agent write a fix and open a GitHub PR">
+              🤖 Open fix PR
+            </button>
+          )}
           {notifyMsg && <span className="dimx">{notifyMsg}</span>}
+          {fixPr && (
+            <span className="dimx">
+              {fixPr.url ? (
+                <a href={fixPr.url} target="_blank" rel="noreferrer">
+                  ✓ PR opened →
+                </a>
+              ) : (
+                fixPr.msg
+              )}
+            </span>
+          )}
         </div>
       </header>
 

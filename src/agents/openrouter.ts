@@ -36,6 +36,40 @@ export class OpenRouterAgent implements AgentRunner {
     if (!explanation) throw new Error('The model returned an empty response.');
     return { explanation };
   }
+
+  async proposeCodeFix(filePath: string, fileContent: string, errorMessage: string): Promise<string> {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENROUTER_API_KEY is not set — run `npx @insforge/cli ai setup`.');
+    }
+    const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey });
+    const completion = await client.chat.completions.create({
+      model: process.env.OPENROUTER_CHAT_MODEL ?? 'openai/gpt-4o',
+      messages: [
+        { role: 'system', content: CODE_FIX_SYSTEM },
+        {
+          role: 'user',
+          content: `FILE: ${filePath}\n\n\`\`\`\n${fileContent}\n\`\`\`\n\nRUNTIME ERROR: ${errorMessage}\n\nReturn the COMPLETE corrected file.`,
+        },
+      ],
+      max_completion_tokens: 2000,
+    });
+    const raw = completion.choices[0]?.message?.content?.trim() ?? '';
+    const fixed = stripFences(raw);
+    if (!fixed) throw new Error('The model returned an empty code fix.');
+    return fixed;
+  }
+}
+
+const CODE_FIX_SYSTEM = `You are a senior engineer. You are given a source file and a runtime error it \
+produced. Return the COMPLETE corrected file that fixes the error with a minimal, safe change and no \
+unrelated edits. Preserve the file's style and exports. Output ONLY the file contents — no explanation, \
+no commentary, and no markdown code fences.`;
+
+/** Strip a leading ```lang fence and trailing ``` if the model added them anyway. */
+function stripFences(text: string): string {
+  const m = /^```[a-zA-Z]*\n([\s\S]*?)\n```$/.exec(text.trim());
+  return (m ? m[1] : text).trim() + '\n';
 }
 
 const SYSTEM_PROMPT = `You are Capsule's backend debugging assistant. Capsule froze the backend's exact \

@@ -17,6 +17,7 @@ import {
   settingsStatus,
   sendTest,
   notifyCapsule,
+  fixCapsuleOnGithub,
 } from '../notify/service';
 import type { BackendState, CapsuleContext, CapsuleMeta } from '../core/types';
 
@@ -163,6 +164,13 @@ async function handleApi(
   if (method === 'POST' && notifyMatch) {
     const id = decodeURIComponent(notifyMatch[1]);
     return sendJson(res, 200, await notifyCapsule(id));
+  }
+
+  // Agent writes a code fix and opens a PR on the configured GitHub repo.
+  const fixPrMatch = /^\/api\/capsules\/([^/]+)\/fix-pr$/.exec(path);
+  if (method === 'POST' && fixPrMatch) {
+    const id = decodeURIComponent(fixPrMatch[1]);
+    return sendJson(res, 200, await fixCapsuleOnGithub(id));
   }
 
   const restoreMatch = /^\/api\/restore\/([^/]+)$/.exec(path);

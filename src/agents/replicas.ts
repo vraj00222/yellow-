@@ -8,6 +8,8 @@ export interface AgentRunner {
     diff: StateDiff,
     extra?: string,
   ): Promise<{ explanation: string; patch?: string }>;
+  /** Rewrite a source file to fix a runtime error — returns the COMPLETE corrected file. */
+  proposeCodeFix(filePath: string, fileContent: string, errorMessage: string): Promise<string>;
 }
 
 /**
@@ -26,6 +28,10 @@ export class ReplicasAgent implements AgentRunner {
     _diff: StateDiff,
     _extra?: string,
   ): Promise<{ explanation: string; patch?: string }> {
+    throw new Error('ReplicasAgent not wired yet — Replicas credits pending.');
+  }
+
+  async proposeCodeFix(_filePath: string, _fileContent: string, _errorMessage: string): Promise<string> {
     throw new Error('ReplicasAgent not wired yet — Replicas credits pending.');
   }
 }

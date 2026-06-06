@@ -13,6 +13,7 @@ import {
   type TgUpdate,
 } from './telegram';
 import { loadNotify, saveNotify, type Approval, type NotifyState } from './store';
+import { getFile, openFixPR, ghAvailable } from '../github';
 
 /**
  * The crash → triage → Telegram approval loop.
@@ -168,13 +169,15 @@ function alertText(
 }
 
 function approvalButtons(id: string): InlineButton[][] {
-  return [
+  const rows: InlineButton[][] = [
     [
       { text: '✅ Approve & restore', callback_data: `approve:${id}` },
       { text: '❌ Reject', callback_data: `reject:${id}` },
     ],
     [{ text: '🔍 Investigate', callback_data: `investigate:${id}` }],
   ];
+  if (ghAvailable()) rows.push([{ text: '🤖 Fix on GitHub', callback_data: `fixpr:${id}` }]);
+  return rows;
 }
 
 /* ------------------------------------------------------------------- poller */
@@ -226,10 +229,26 @@ async function handleUpdate(u: TgUpdate): Promise<void> {
       await answerCallback(cb.id, 'Not authorized.');
       return;
     }
+    if (action === 'fixpr') {
+      await answerCallback(cb.id, 'Opening a fix PR on GitHub…');
+      await fixViaTelegram(id);
+      return;
+    }
     await answerCallback(cb.id);
     if (action === 'approve') await approve(id);
     else if (action === 'reject') await reject(id);
     else if (action === 'investigate') await investigate(id);
+  }
+}
+
+async function fixViaTelegram(id: string): Promise<void> {
+  const state = await loadNotify();
+  const res = await fixCapsuleOnGithub(id);
+  if (!state.chatId) return;
+  if (res.ok) {
+    await sendMessage(state.chatId, `🤖 <b>Fix PR opened</b>\n<a href="${esc(res.url!)}">${esc(res.url!)}</a>\nReview &amp; merge to ship the fix.`);
+  } else {
+    await sendMessage(state.chatId, `⚠️ Could not open a fix PR: ${esc(res.error ?? 'unknown error')}`);
   }
 }
 
@@ -302,6 +321,41 @@ async function investigate(id: string, note?: string): Promise<void> {
 
 export async function listApprovals(): Promise<Record<string, Approval>> {
   return (await loadNotify()).approvals;
+}
+
+/**
+ * Have the agent rewrite the target source file to fix this crash, and open a PR
+ * on the configured GitHub repo. Powers the Telegram "🤖 Fix on GitHub" button
+ * and the dashboard "Open fix PR" action.
+ */
+export async function fixCapsuleOnGithub(
+  id: string,
+): Promise<{ ok: boolean; url?: string; error?: string }> {
+  if (!ghAvailable()) return { ok: false, error: 'GITHUB_FIX_REPO / GITHUB_FIX_PATH not set' };
+  const repo = process.env.GITHUB_FIX_REPO as string;
+  const path = process.env.GITHUB_FIX_PATH as string;
+  try {
+    const meta = await deps!.store.getMeta(id);
+    const err = meta.context.error;
+    if (!err) return { ok: false, error: 'not a crash capsule' };
+    const { content, sha } = await getFile(repo, path);
+    const fixed = await deps!.agent.proposeCodeFix(path, content, `${err.name}: ${err.message}`);
+    if (fixed.trim() === content.trim()) return { ok: false, error: 'agent produced no change' };
+    const branch = `capsule-fix-${id}-${Date.now().toString(36).slice(-4)}`;
+    const url = await openFixPR({
+      repo,
+      path,
+      newContent: fixed,
+      sha,
+      branch,
+      commitMsg: `fix: ${err.message}`.slice(0, 72),
+      title: `Capsule fix: ${err.message}`.slice(0, 100),
+      body: `Auto-generated fix for capsule \`${id}\`.\n\n**Error:** ${err.name}: ${err.message}\n\n🤖 Proposed by Capsule's agent via InsForge Model Gateway. Review before merging.`,
+    });
+    return { ok: true, url };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }
 
 export async function getApproval(id: string): Promise<Approval | null> {
