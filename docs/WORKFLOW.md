@@ -58,12 +58,18 @@ a message: severity, the error, the **AI root cause + fix**, and three buttons �
 **✅ Approve & restore · ❌ Reject · 🔍 Investigate**.
 
 ### 4. Respond — and watch the result
-- **✅ Approve & restore** → the message edits to "Approved — healing", the
-  Yellow Store **self-heals** (Studio Tee reappears; click **Checkout** again →
-  it succeeds), and the dashboard chip flips to **Approved**.
+- **✅ Approve & restore** → the store **self-heals** (Studio Tee reappears;
+  Checkout again → it succeeds), dashboard chip flips **Approved**. *(fixes the
+  symptom now — repairs the running data)*
+- **🤖 Fix on GitHub** → the agent rewrites the buggy file and opens a **real PR**
+  on `lumen-store`; Telegram replies with the link. Merge it to fix the root cause
+  in source. *(also on the dashboard as "🤖 Open fix PR")*
 - **❌ Reject** → nothing changes; chip → **Rejected** (kept for investigation).
 - **🔍 Investigate** *or just type a follow-up* (e.g. "check the logs, is restore
   really right?") → the agent re-answers with a deeper analysis + the buttons again.
+
+> **Dashboard login:** hardcoded `admin` / `capsule` (override via
+> `DASHBOARD_USER`/`DASHBOARD_PASS`). Machine endpoints stay open.
 
 ### 5. Check InsForge in between
 Open your **InsForge dashboard → Model Credits**: it ticks up ($/$10) with every
@@ -79,11 +85,13 @@ shim), etc. Each lands in the dashboard, auto-sorted by category + severity, and
 (if connected) pings Telegram. Tip: do the **Checkout headline first and approve
 it** so the store is healthy again before showing the rest.
 
-## What "fix" means today (and what's next)
+## Two kinds of fix
 
-- **Today:** the agent **diagnoses** (plain-English root cause + a concrete
-  code/data fix) and **Approve restores the data** — it heals the *running* app.
-  It does **not** edit your source files yet.
-- **Next iteration:** the agent opens a **GitHub PR** with the code fix and the
-  developer approves the PR (instead of / in addition to restoring data). The
-  Telegram approve-loop becomes "approve the PR from your phone".
+- **Approve & restore** — repairs the running data instantly (heals the symptom).
+- **Fix on GitHub** — the agent (InsForge Model Gateway) rewrites the buggy source
+  file and opens a **PR** on the configured repo (`GITHUB_FIX_REPO` /
+  `GITHUB_FIX_PATH`, via the `gh` CLI). Review + merge to fix the root cause.
+  The store the agent patches is its own repo: **github.com/vraj00222/lumen-store**.
+
+**Next:** wire the merged PR to a Vercel deploy so merge → auto-redeploy → the
+live site is fixed (needs the store + Capsule publicly hosted).
