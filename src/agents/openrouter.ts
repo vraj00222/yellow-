@@ -14,6 +14,7 @@ export class OpenRouterAgent implements AgentRunner {
   async proposeFix(
     capsule: CapsuleMeta,
     diff: StateDiff,
+    extra?: string,
   ): Promise<{ explanation: string; patch?: string }> {
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -27,7 +28,7 @@ export class OpenRouterAgent implements AgentRunner {
       model: process.env.OPENROUTER_CHAT_MODEL ?? 'openai/gpt-4o',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildPrompt(capsule, diff) },
+        { role: 'user', content: buildPrompt(capsule, diff, extra) },
       ],
       max_completion_tokens: 600,
     });
@@ -45,7 +46,7 @@ Name the ROOT CAUSE in 2-3 sentences, grounded in the specific rows shown — no
 a concrete FIX (code-level or data-level). Be direct and specific about the tables and rows involved. \
 Plain text only: no markdown headings, no bullet symbols, no preamble.`;
 
-function buildPrompt(capsule: CapsuleMeta, diff: StateDiff): string {
+function buildPrompt(capsule: CapsuleMeta, diff: StateDiff, extra?: string): string {
   const { error, request } = capsule.context;
   const lines: string[] = [];
   if (error) lines.push(`ERROR: ${error.name}: ${error.message}`);
@@ -56,6 +57,9 @@ function buildPrompt(capsule: CapsuleMeta, diff: StateDiff): string {
   lines.push('', 'DATABASE CHANGES (last healthy snapshot → crash):');
   const changes = describeDiff(diff);
   lines.push(changes.length ? changes.join('\n') : '(no row-level changes detected)');
+  if (extra && extra.trim()) {
+    lines.push('', `DEVELOPER FOLLOW-UP: ${extra.trim()}`, 'Address this follow-up directly.');
+  }
   return lines.join('\n');
 }
 

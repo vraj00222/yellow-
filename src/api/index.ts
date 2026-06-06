@@ -8,11 +8,21 @@ import { CapsuleNotFoundError } from '../core/errors';
 import { getAdapter } from '../config';
 import { CAPSULE_VERSION } from '../version';
 import { OpenRouterAgent } from '../agents/openrouter';
+import { triage, rowsAffected } from '../triage';
+import {
+  startNotifier,
+  listApprovals,
+  getApproval,
+  settingsStatus,
+  sendTest,
+  notifyCapsule,
+} from '../notify/service';
 import type { BackendState, CapsuleMeta } from '../core/types';
 
 const store = new CapsuleStore(getAdapter());
 const agent = new OpenRouterAgent();
 const PORT = Number(process.env.PORT ?? 4000);
+const DASHBOARD_URL = process.env.DASHBOARD_URL ?? `http://localhost:${PORT}`;
 const DASHBOARD_DIST = resolve(process.cwd(), 'dashboard/dist');
 
 const server = createServer((req, res) => {
@@ -37,7 +47,24 @@ async function handleApi(method: string, url: URL, res: ServerResponse): Promise
   }
 
   if (method === 'GET' && path === '/api/capsules') {
-    return sendJson(res, 200, await store.list());
+    const metas = await store.list();
+    return sendJson(
+      res,
+      200,
+      metas.map((m) => ({ ...m, triage: triage(m) })),
+    );
+  }
+
+  if (method === 'GET' && path === '/api/approvals') {
+    return sendJson(res, 200, await listApprovals());
+  }
+
+  if (method === 'GET' && path === '/api/settings') {
+    return sendJson(res, 200, await settingsStatus());
+  }
+
+  if (method === 'POST' && path === '/api/settings/test') {
+    return sendJson(res, 200, await sendTest());
   }
 
   if (method === 'GET' && path === '/api/diff') {
@@ -59,12 +86,14 @@ async function handleApi(method: string, url: URL, res: ServerResponse): Promise
     // show "what changed" inline — not just the error, but the rows that moved.
     const baseline = findBaseline(metas, meta.id);
     const affected = baseline ? await store.diff(baseline.id, meta.id) : null;
+    const rows = affected ? rowsAffected(affected) : 0;
     return sendJson(res, 200, {
-      meta,
+      meta: { ...meta, triage: triage(meta, rows) },
       summary: summarize(state),
       state,
       baseline: baseline ? { id: baseline.id, label: baseline.label } : null,
       affected,
+      approval: await getApproval(meta.id),
     });
   }
 
@@ -77,6 +106,13 @@ async function handleApi(method: string, url: URL, res: ServerResponse): Promise
     const baseline = findBaseline(metas, meta.id);
     const diff = await store.diff(baseline ? baseline.id : meta.id, meta.id);
     return sendJson(res, 200, await agent.proposeFix(meta, diff));
+  }
+
+  // Manually (re)send a capsule's alert to Telegram — the dashboard "Send to Telegram" button.
+  const notifyMatch = /^\/api\/capsules\/([^/]+)\/notify$/.exec(path);
+  if (method === 'POST' && notifyMatch) {
+    const id = decodeURIComponent(notifyMatch[1]);
+    return sendJson(res, 200, await notifyCapsule(id));
   }
 
   const restoreMatch = /^\/api\/restore\/([^/]+)$/.exec(path);
@@ -169,4 +205,6 @@ function isFile(p: string): boolean {
 
 server.listen(PORT, () => {
   console.log(`[capsule:api] listening on http://localhost:${PORT}`);
+  // Watch for new crashes → triage → Telegram approval loop.
+  startNotifier({ store, agent, dashboardUrl: DASHBOARD_URL });
 });

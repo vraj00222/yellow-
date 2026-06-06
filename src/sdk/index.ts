@@ -2,6 +2,7 @@ import type {
   BackendAdapter,
   CapsuleContext,
   CapsuleErrorInfo,
+  CapsuleMeta,
   CapsuleRequest,
 } from '../core/types';
 import { CapsuleStore } from '../core/store';
@@ -34,6 +35,8 @@ export interface Capsule {
   store: CapsuleStore;
   guard<T>(fn: () => T | Promise<T>, ctx?: GuardContext): Promise<T>;
   errorMiddleware(): ErrorMiddleware;
+  /** Freeze a crash capsule from an error reported out-of-band (e.g. a browser). */
+  reportError(errorInfo: CapsuleErrorInfo, ctx?: GuardContext): Promise<CapsuleMeta>;
 }
 
 export function initCapsule(adapter: BackendAdapter): Capsule {
@@ -42,12 +45,20 @@ export function initCapsule(adapter: BackendAdapter): Capsule {
   /** Capture a crash as a capsule. NEVER throws — the freeze path must not mask the user's error. */
   async function freezeCrash(err: unknown, ctx?: GuardContext): Promise<void> {
     try {
-      const meta = await store.freeze('crash', buildContext(err, ctx));
+      const meta = await store.freeze('crash', buildContext(toErrorInfo(err), ctx));
       attachCapsuleId(err, meta.id);
       console.error(`[capsule] crash captured → ${store.shareUrl(meta.id)}`);
     } catch (freezeErr) {
       console.error('[capsule] failed to freeze crash capsule:', freezeErr);
     }
+  }
+
+  /**
+   * Freeze a crash from an error reported out-of-band (e.g. a browser's
+   * window.onerror shipped to an ingest route). Same redaction as guard().
+   */
+  async function reportError(errorInfo: CapsuleErrorInfo, ctx?: GuardContext): Promise<CapsuleMeta> {
+    return store.freeze('crash', buildContext(errorInfo, ctx));
   }
 
   async function guard<T>(fn: () => T | Promise<T>, ctx?: GuardContext): Promise<T> {
@@ -74,11 +85,11 @@ export function initCapsule(adapter: BackendAdapter): Capsule {
     };
   }
 
-  return { store, guard, errorMiddleware };
+  return { store, guard, errorMiddleware, reportError };
 }
 
-function buildContext(err: unknown, ctx?: GuardContext): CapsuleContext {
-  const context: CapsuleContext = { error: toErrorInfo(err) };
+function buildContext(error: CapsuleErrorInfo, ctx?: GuardContext): CapsuleContext {
+  const context: CapsuleContext = { error };
   if (ctx?.request) {
     context.request = {
       method: ctx.request.method,

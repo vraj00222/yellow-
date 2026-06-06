@@ -2,7 +2,12 @@ import type { CapsuleMeta, StateDiff } from '../core/types';
 
 /** A coding agent that proposes a fix from a captured capsule and its diff. */
 export interface AgentRunner {
-  proposeFix(capsule: CapsuleMeta, diff: StateDiff): Promise<{ explanation: string; patch?: string }>;
+  /** `extra` is an optional follow-up instruction from the developer (e.g. "look at the logs"). */
+  proposeFix(
+    capsule: CapsuleMeta,
+    diff: StateDiff,
+    extra?: string,
+  ): Promise<{ explanation: string; patch?: string }>;
 }
 
 /**
@@ -19,6 +24,7 @@ export class ReplicasAgent implements AgentRunner {
   async proposeFix(
     _capsule: CapsuleMeta,
     _diff: StateDiff,
+    _extra?: string,
   ): Promise<{ explanation: string; patch?: string }> {
     throw new Error('ReplicasAgent not wired yet — Replicas credits pending.');
   }
