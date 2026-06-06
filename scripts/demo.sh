@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
-# Capsule demo controller — one command to run the whole show.
-#   ./scripts/demo.sh up      start store (:4100) + dashboard/API/Telegram (:4000)
-#   ./scripts/demo.sh down    stop everything
-#   ./scripts/demo.sh reset   clear the timeline / reseed the store (keeps Telegram link)
-#   ./scripts/demo.sh status  show what's running + Telegram connection
-cd "$(dirname "$0")/.." || exit 1
-
-APP_LOG=/tmp/lumen-app.log
+# One command for the whole local demo:
+#   Capsule dashboard/API/Telegram (:4000)  +  Lumen store (:4100, auto-pulls fixes)
+#   ./scripts/demo.sh up | down | reset | status
+cd "$(dirname "$0")/.." || exit 1            # capsule repo root
+LUMEN_DIR="${LUMEN_DIR:-$HOME/Developer/lumen-store}"
 API_LOG=/tmp/capsule-api.log
+LUMEN_LOG=/tmp/lumen.log
 
 bot_info() {
   curl -s http://localhost:4000/api/settings 2>/dev/null | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    s = 'connected as @' + str(d.get('chatName')) if d.get('connected') else 'NOT connected — /start the bot on the dev phone'
+    s = 'connected as @' + str(d.get('chatName')) if d.get('connected') else 'NOT connected — /start the bot'
     print('  telegram: ' + ('enabled' if d.get('enabled') else 'no token') + ' · ' + s)
 except Exception:
     print('  telegram: (API not up yet)')
@@ -23,6 +21,10 @@ except Exception:
 
 kill_all() {
   pkill -9 -f "src/api/index.ts" 2>/dev/null
+  pkill -9 -f "tsx watch src/server.ts" 2>/dev/null
+  pkill -9 -f "tsx src/server.ts" 2>/dev/null
+  pkill -9 -f "dev-auto.sh" 2>/dev/null
+  pkill -9 -f "git pull --ff-only" 2>/dev/null
   pkill -9 -f "demo/app/server.ts" 2>/dev/null
   for port in 4000 4100; do
     pids=$(lsof -ti:$port 2>/dev/null)
@@ -33,32 +35,30 @@ kill_all() {
 
 case "${1:-up}" in
   up)
+    [ -d "$LUMEN_DIR" ] || { echo "✗ store not found at $LUMEN_DIR (set LUMEN_DIR=…)"; exit 1; }
     echo "▶ stopping any old servers…"; kill_all; sleep 3
-    echo "▶ starting Lumen store on :4100…"; nohup npm run app > "$APP_LOG" 2>&1 & sleep 4
-    echo "▶ starting Capsule dashboard + API + Telegram on :4000…"; nohup npm run api > "$API_LOG" 2>&1 & sleep 6
+    echo "▶ Capsule dashboard + API + Telegram on :4000…"
+    nohup npm run api > "$API_LOG" 2>&1 & sleep 5
+    echo "▶ Lumen store on :4100 (auto-pull merged fixes + watch)…"
+    ( cd "$LUMEN_DIR" && CAPSULE_API=http://localhost:4000 PORT=4100 nohup npm run dev:auto > "$LUMEN_LOG" 2>&1 & )
+    sleep 5
     echo ""
     echo "  ✅ Store (customers) → http://localhost:4100"
     echo "  ✅ Dashboard (you)   → http://localhost:4000"
     bot_info
-    echo "  logs: tail -f $API_LOG   /   $APP_LOG"
-    echo ""
-    echo "  If telegram is NOT connected: open your bot on the dev phone and tap Start (/start)."
+    echo "  logs: tail -f $API_LOG   /   $LUMEN_LOG"
+    echo "  If Telegram is NOT connected: /start @yellowhelpingbot on the dev phone."
     ;;
   down)
-    echo "▶ stopping all demo servers…"; kill_all; sleep 1; echo "  done."
+    echo "▶ stopping store + dashboard…"; kill_all; sleep 1; echo "  done."
     ;;
   reset)
-    echo "▶ clearing the timeline + reseeding the store (keeps the Telegram link)…"
-    pkill -9 -f "demo/app/server.ts" 2>/dev/null
-    pids=$(lsof -ti:4100 2>/dev/null); [ -n "$pids" ] && kill -9 $pids 2>/dev/null
-    sleep 2; nohup npm run app > "$APP_LOG" 2>&1 & sleep 3
-    echo "  store reseeded; dashboard board cleared."
+    echo "▶ restocking the store catalog…"
+    curl -s -X POST http://localhost:4100/api/admin/restock >/dev/null && echo "  catalog restored." || echo "  (store not up)"
     ;;
   status)
-    api_pid=$(pgrep -f "src/api/index.ts" | head -1)
-    app_pid=$(pgrep -f "demo/app/server.ts" | head -1)
-    echo "  api (:4000): ${api_pid:-not running}"
-    echo "  app (:4100): ${app_pid:-not running}"
+    echo "  api (:4000):   $(pgrep -f 'src/api/index.ts' | head -1 || echo 'not running')"
+    echo "  store (:4100): $(pgrep -f 'tsx watch src/server.ts' | head -1 || echo 'not running')"
     bot_info
     echo "  conflicts in api log: $(grep -ci conflict "$API_LOG" 2>/dev/null || echo 0)  (should be 0)"
     ;;
